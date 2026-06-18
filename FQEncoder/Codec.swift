@@ -8,16 +8,20 @@ let passwordDefaultsKey = "fq.encodingPassword"
 /// 7 symbols: F, U, C, K, Y, O, u  (note: uppercase "U" and lowercase "u"
 /// are distinct symbols).
 ///
-/// Scheme (two stages):
+/// Scheme (three stages):
 ///  1. Keystream XOR — the input's UTF-8 bytes are XOR'd with a keystream
 ///     derived from the password (SHA-256 in counter mode). This destroys any
 ///     stable per-character mapping: the same input byte produces different
 ///     output depending on its position and on the password, so the output
 ///     can't be read by memorising a fixed substitution table.
-///  2. Base-7 packing — each resulting byte (0...255) is written as exactly
+///  2. Bidirectional diffusion — a forward + backward additive chain (O(n))
+///     makes every output byte depend on every input byte, so changing one
+///     byte avalanches through the whole result and there are no shared
+///     prefixes between similar inputs.
+///  3. Base-7 packing — each resulting byte (0...255) is written as exactly
 ///     3 base-7 digits (7^3 = 343 ≥ 256), each digit selecting one symbol.
 ///
-/// Decoding reverses both stages. Note: this is obfuscation, not encryption —
+/// Decoding reverses all stages. Note: this is obfuscation, not encryption —
 /// it is keyed but unauthenticated, and an embedded key can be recovered from
 /// the binary. Its job is to stop casual readers from guessing the method.
 enum Codec {
@@ -57,12 +61,14 @@ enum Codec {
     static func encode(_ input: String, key: String) -> String {
         var bytes = Array(input.utf8)
         applyKeystream(&bytes, key: key)
+        diffuse(&bytes)
         return packBase7(bytes)
     }
 
     /// Decode a 7-symbol string back to the original text using `key`.
     static func decode(_ input: String, key: String) throws -> String {
         var bytes = try unpackBase7(input)
+        undiffuse(&bytes)
         applyKeystream(&bytes, key: key)
         guard let decoded = String(bytes: bytes, encoding: .utf8) else {
             throw CodecError.notUTF8
@@ -95,6 +101,58 @@ enum Codec {
                 produced += 1
             }
             counter &+= 1
+        }
+    }
+
+    // MARK: - Bidirectional diffusion (content-dependent, O(n))
+
+    // Fixed initial accumulators for the two passes. The keystream layer above
+    // already supplies the keyed pseudo-randomness; these only need to be
+    // deterministic and non-zero.
+    private static let ivForward: UInt8 = 0x9E
+    private static let ivBackward: UInt8 = 0x7F
+
+    /// Spread every byte's influence across the whole buffer so a single-byte
+    /// change avalanches through the entire output (no shared prefixes).
+    /// Forward pass folds in everything to the left; backward pass folds in
+    /// everything to the right — together every output byte depends on every
+    /// input byte. Uses addition mod 256, which is exactly reversible.
+    private static func diffuse(_ b: inout [UInt8]) {
+        guard !b.isEmpty else { return }
+        // Forward: B[i] = A[i] + B[i-1]
+        var acc = ivForward
+        for i in b.indices {
+            b[i] = b[i] &+ acc
+            acc = b[i]
+        }
+        // Backward: C[i] = B[i] + C[i+1]
+        acc = ivBackward
+        var i = b.count - 1
+        while i >= 0 {
+            b[i] = b[i] &+ acc
+            acc = b[i]
+            i -= 1
+        }
+    }
+
+    /// Inverse of `diffuse`: undo the backward pass first, then the forward one.
+    private static func undiffuse(_ b: inout [UInt8]) {
+        guard !b.isEmpty else { return }
+        // Invert backward: B[i] = C[i] - C[i+1]
+        var next = ivBackward
+        var i = b.count - 1
+        while i >= 0 {
+            let cur = b[i]
+            b[i] = cur &- next
+            next = cur
+            i -= 1
+        }
+        // Invert forward: A[i] = B[i] - B[i-1]
+        var prev = ivForward
+        for j in b.indices {
+            let cur = b[j]
+            b[j] = cur &- prev
+            prev = cur
         }
     }
 

@@ -30,11 +30,21 @@ struct FQEncoderApp: App {
             }
             .keyboardShortcut("o")
 
+            SettingsLink {
+                Text("設定…")
+            }
+            .keyboardShortcut(",")
+
             Button("結束 FQEncoder") {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")
         }
         .menuBarExtraStyle(.menu)
+
+        // Preferences window (⌘,) for the encoding password.
+        Settings {
+            SettingsView()
+        }
     }
 }

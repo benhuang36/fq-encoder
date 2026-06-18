@@ -1,14 +1,25 @@
 import Foundation
+import CryptoKit
+
+/// UserDefaults key for the user's preset password (the encoding key).
+let passwordDefaultsKey = "fq.encodingPassword"
 
 /// Reversible codec that maps arbitrary text into a string built from only
 /// 7 symbols: F, U, C, K, Y, O, u  (note: uppercase "U" and lowercase "u"
 /// are distinct symbols).
 ///
-/// Scheme: the input is taken as UTF-8 bytes. Each byte (0...255) is written
-/// as exactly 3 base-7 digits (7^3 = 343 ≥ 256), and each digit selects one
-/// symbol from the alphabet. Decoding reverses this 3-symbols-per-byte mapping
-/// and rebuilds the UTF-8 string. Fixed-width grouping makes the encoding
-/// unambiguous and trivially reversible.
+/// Scheme (two stages):
+///  1. Keystream XOR — the input's UTF-8 bytes are XOR'd with a keystream
+///     derived from the password (SHA-256 in counter mode). This destroys any
+///     stable per-character mapping: the same input byte produces different
+///     output depending on its position and on the password, so the output
+///     can't be read by memorising a fixed substitution table.
+///  2. Base-7 packing — each resulting byte (0...255) is written as exactly
+///     3 base-7 digits (7^3 = 343 ≥ 256), each digit selecting one symbol.
+///
+/// Decoding reverses both stages. Note: this is obfuscation, not encryption —
+/// it is keyed but unauthenticated, and an embedded key can be recovered from
+/// the binary. Its job is to stop casual readers from guessing the method.
 enum Codec {
     static let alphabet: [Character] = ["F", "U", "C", "K", "Y", "O", "u"]
     private static let radix = 7
@@ -35,16 +46,64 @@ enum Codec {
             case .invalidByte:
                 return "包含無效的編碼組合，這不是由 FQEncoder 產生的字串。"
             case .notUTF8:
-                return "解碼後的位元組無法還原為文字。"
+                return "解碼失敗，可能是密碼不正確，或這不是 FQEncoder 編出來的字串。"
             }
         }
     }
 
-    /// Encode any string into the 7-symbol alphabet.
-    static func encode(_ input: String) -> String {
+    // MARK: - Public keyed API
+
+    /// Encode any string into the 7-symbol alphabet using `key` as the password.
+    static func encode(_ input: String, key: String) -> String {
+        var bytes = Array(input.utf8)
+        applyKeystream(&bytes, key: key)
+        return packBase7(bytes)
+    }
+
+    /// Decode a 7-symbol string back to the original text using `key`.
+    static func decode(_ input: String, key: String) throws -> String {
+        var bytes = try unpackBase7(input)
+        applyKeystream(&bytes, key: key)
+        guard let decoded = String(bytes: bytes, encoding: .utf8) else {
+            throw CodecError.notUTF8
+        }
+        return decoded
+    }
+
+    /// Whether `input` looks like a valid encoded string for the given `key`.
+    /// Used by the clipboard monitor to decide encode-vs-decode automatically.
+    static func looksEncoded(_ input: String, key: String) -> Bool {
+        guard !input.isEmpty, input.count % 3 == 0 else { return false }
+        for c in input where valueOf[c] == nil { return false }
+        return (try? decode(input, key: key)) != nil
+    }
+
+    // MARK: - Keystream (SHA-256 counter mode)
+
+    /// Deterministic keystream of `count` bytes derived from `key`. XOR is its
+    /// own inverse, so the same call is used for both encode and decode.
+    private static func applyKeystream(_ bytes: inout [UInt8], key: String) {
+        guard !bytes.isEmpty else { return }
+        let seed = Data(SHA256.hash(data: Data("FQEncoder.v1:\(key)".utf8)))
+        var produced = 0
+        var counter: UInt64 = 0
+        while produced < bytes.count {
+            var block = seed
+            withUnsafeBytes(of: counter.littleEndian) { block.append(contentsOf: $0) }
+            for b in SHA256.hash(data: block) where produced < bytes.count {
+                bytes[produced] ^= b
+                produced += 1
+            }
+            counter &+= 1
+        }
+    }
+
+    // MARK: - Base-7 packing
+
+    private static func packBase7(_ bytes: [UInt8]) -> String {
         var result = ""
-        result.reserveCapacity(input.utf8.count * 3)
-        for byte in input.utf8 {
+        result.reserveCapacity(bytes.count * 3)
+        for byte in bytes {
             let v = Int(byte)
             result.append(alphabet[(v / 49) % radix])
             result.append(alphabet[(v / 7) % radix])
@@ -53,8 +112,7 @@ enum Codec {
         return result
     }
 
-    /// Decode a 7-symbol string back to the original text.
-    static func decode(_ input: String) throws -> String {
+    private static func unpackBase7(_ input: String) throws -> [UInt8] {
         let chars = Array(input)
         guard chars.count % 3 == 0 else { throw CodecError.invalidLength }
 
@@ -72,18 +130,6 @@ enum Codec {
             bytes.append(UInt8(value))
             i += 3
         }
-
-        guard let decoded = String(bytes: bytes, encoding: .utf8) else {
-            throw CodecError.notUTF8
-        }
-        return decoded
-    }
-
-    /// Whether `input` looks like a valid encoded string produced by `encode`.
-    /// Used by the clipboard monitor to decide encode-vs-decode automatically.
-    static func looksEncoded(_ input: String) -> Bool {
-        guard !input.isEmpty, input.count % 3 == 0 else { return false }
-        for c in input where valueOf[c] == nil { return false }
-        return (try? decode(input)) != nil
+        return bytes
     }
 }

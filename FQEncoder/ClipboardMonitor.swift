@@ -65,15 +65,16 @@ final class ClipboardMonitor: ObservableObject {
         // Layer 2: ignore content we wrote ourselves.
         if text == lastWrittenString { return }
 
+        let key = UserDefaults.standard.string(forKey: passwordDefaultsKey) ?? ""
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let result: String
         let label: String
-        if Codec.looksEncoded(trimmed) {
-            guard let decoded = try? Codec.decode(trimmed) else { return }
+        if Codec.looksEncoded(trimmed, key: key) {
+            guard let decoded = try? Codec.decode(trimmed, key: key) else { return }
             result = decoded
             label = "已解碼"
         } else {
-            result = Codec.encode(text)
+            result = Codec.encode(text, key: key)
             label = "已編碼"
         }
 

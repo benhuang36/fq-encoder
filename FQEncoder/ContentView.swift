@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var errorMessage: String?
     @State private var didCopy = false
     @FocusState private var inputFocused: Bool
+    @AppStorage(passwordDefaultsKey) private var password = ""
 
     var body: some View {
         ZStack {
@@ -156,13 +157,13 @@ struct ContentView: View {
 
     private func runEncode() {
         errorMessage = nil
-        output = Codec.encode(input)
+        output = Codec.encode(input, key: password)
     }
 
     private func runDecode() {
         errorMessage = nil
         do {
-            output = try Codec.decode(input.trimmingCharacters(in: .whitespacesAndNewlines))
+            output = try Codec.decode(input.trimmingCharacters(in: .whitespacesAndNewlines), key: password)
         } catch {
             output = ""
             errorMessage = error.localizedDescription

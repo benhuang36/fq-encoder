@@ -88,9 +88,13 @@ struct ContentView: View {
             ZStack(alignment: .topLeading) {
                 if text.wrappedValue.isEmpty {
                     Text(placeholder)
+                        .font(.system(size: 14, design: editable ? .default : .monospaced))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 12)
+                        // Match the TextEditor's text origin: outer padding (13/6)
+                        // plus NSTextView's default 5pt lineFragmentPadding on the left.
+                        .padding(.leading, 13 + 5)
+                        .padding(.trailing, 13)
+                        .padding(.vertical, 6)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: text)
@@ -98,7 +102,7 @@ struct ContentView: View {
                     .disabled(!editable)
                     .font(.system(size: 14, design: editable ? .default : .monospaced))
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 13)
                     .padding(.vertical, 6)
             }
             .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)

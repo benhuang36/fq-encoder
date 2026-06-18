@@ -12,6 +12,7 @@ It ships as a menu-bar app: open the editor to encode/decode by hand, or let it 
 
 - **Encode** — turn arbitrary text (including CJK and emoji) into the 7-symbol alphabet.
 - **Decode** — turn a valid encoded string back into the original text.
+- **Password-keyed** — an optional password (set in Settings, ⌘,) keys the encoding, so the same text produces a completely different result per password, and you can't read it off a fixed substitution table. Encoding and decoding must use the same password.
 - **Modern SwiftUI UI** — gradient + frosted-glass editor, input on top, output below, with one-click copy.
 - **Menu-bar resident** — no Dock icon (`LSUIElement`), lives in the status bar.
 - **Automatic clipboard mode** — copy plain text → it's encoded; copy an encoded string → it's decoded. With loop-safe guards so it never fights itself.
@@ -20,49 +21,55 @@ It ships as a menu-bar app: open the editor to encode/decode by hand, or let it 
 
 ## How the encoding works
 
-The codec is **per-byte, fixed-width base-7 conversion**.
+Encoding runs the UTF-8 bytes through **three stages**; decoding reverses them.
 
-The alphabet has 7 symbols, mapped to digits `0–6`:
+```
+encode:  text → UTF-8 bytes → ① keystream XOR → ② diffusion → ③ base-7 pack → symbols
+decode:  symbols → ③ unpack → ② un-diffuse → ① keystream XOR → bytes → text
+```
+
+### ① Keystream XOR (keyed)
+
+Each byte is XOR'd with a keystream derived from the password via **SHA-256 in counter mode** (`block = SHA256(seed ‖ counter)`, `seed = SHA256("FQEncoder.v1:" + password)`). This removes any stable per-character mapping — the same byte encodes differently depending on the password.
+
+### ② Bidirectional diffusion (`O(n)`)
+
+A forward then backward additive chain (mod 256) makes **every output byte depend on every input byte**:
+
+```
+forward:   B[i] = A[i] + B[i-1]
+backward:  C[i] = B[i] + C[i+1]
+```
+
+So a one-character change avalanches across most of the output (~80% of symbols flip in practice), and similar inputs no longer share an output prefix. Addition mod 256 is exactly reversible, so decoding undoes it with subtraction.
+
+### ③ Base-7 packing
+
+The alphabet's 7 symbols map to digits `0–6`:
 
 | Symbol | `F` | `U` | `C` | `K` | `Y` | `O` | `u` |
 |:------:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Value  |  0  |  1  |  2  |  3  |  4  |  5  |  6  |
 
-The input is taken as **UTF-8 bytes**. Each byte (`0–255`) is written as exactly **3 base-7 digits**, because `7³ = 343 ≥ 256` (2 digits would only cover `49` values — not enough).
-
-For a byte value `v`:
+Each byte (`0–255`) becomes exactly **3 base-7 digits**, because `7³ = 343 ≥ 256` (2 digits would only cover `49` values). For a byte value `v`:
 
 ```
-d1 = (v / 49) % 7      # most significant
+d1 = (v / 49) % 7   # most significant
 d2 = (v /  7) % 7
-d3 =  v       % 7      # least significant
+d3 =  v       % 7   # least significant     →  byte = d1×49 + d2×7 + d3
 ```
 
-**Example** — the letter `a` (byte `97`):
+Fixed 3-symbols-per-byte keeps decoding **unambiguous and dependency-free** — no big-number math, every byte is exactly 3 symbols.
 
-```
-97 = 1×49 + 6×7 + 6   →  digits (1, 6, 6)  →  U u u
-```
-
-Decoding reverses it, reading 3 symbols at a time:
-
-```
-byte = d1×49 + d2×7 + d3
-```
-
-Then the reconstructed byte sequence is decoded back as UTF-8.
-
-### Why fixed 3-symbols-per-byte?
-
-A "true" base conversion of the whole byte stream would be slightly shorter (`log₂256 / log₂7 ≈ 2.85×` vs the fixed `3×`), but it needs arbitrary-precision integer math and careful handling of leading zeros. The fixed-width scheme trades a little size for **unambiguous, dependency-free decoding** — every byte is exactly 3 symbols, full stop.
+> **This is obfuscation, not encryption.** The scheme is keyed but unauthenticated, and an embedded/default key can be recovered from the binary. Its job is to stop casual readers from guessing the method, not to withstand a determined analyst.
 
 ### Validating an encoded string
 
-A valid encoded string must pass three checks (in order of cost):
+A valid encoded string must pass, in order of cost:
 
 1. **Length** is a multiple of 3 — *necessary, but not sufficient*.
 2. Every character is one of `F U C K Y O u`.
-3. The resulting bytes form valid UTF-8.
+3. After un-diffusing and the keystream XOR (with the correct password), the bytes form valid UTF-8.
 
 ---
 
@@ -95,15 +102,39 @@ open FQEncoder.xcodeproj
 
 ---
 
+## Packaging a distributable app
+
+[`scripts/package.sh`](scripts/package.sh) produces a signed, transferable `.app` zipped into `dist/`:
+
+```sh
+./scripts/package.sh                                    # → dist/FQEncoder.zip
+OUTPUT=~/Desktop/FQEncoder.zip ./scripts/package.sh     # custom output path
+SIGN_IDENTITY="Apple Development: ..." ./scripts/package.sh   # pick a signing identity
+```
+
+It regenerates the project, builds **Release** (a Debug build is tied to DerivedData and won't run elsewhere), code-signs with your Apple Development identity (ad-hoc fallback if none is found), and zips it with `ditto`.
+
+On another Mac, unzip and clear the Gatekeeper quarantine once:
+
+```sh
+xattr -dr com.apple.quarantine /path/to/FQEncoder.app
+```
+
+Then launch it and look for the icon in the menu bar (FQEncoder is a menu-bar resident app with no Dock icon). Clipboard monitoring uses `NSPasteboard` and needs no special permission.
+
+---
+
 ## Project layout
 
 ```
 FQEncoder/
-├── Codec.swift            # base-7 encode/decode + validation
+├── Codec.swift            # keyed 3-stage encode/decode + validation
 ├── ContentView.swift      # SwiftUI editor UI
+├── SettingsView.swift     # password settings (⌘,)
 ├── ClipboardMonitor.swift # loop-safe clipboard watcher
-└── FQEncoderApp.swift      # @main app: window + MenuBarExtra
+└── FQEncoderApp.swift      # @main app: window + MenuBarExtra + Settings
 project.yml                # XcodeGen project definition
+scripts/package.sh         # build + sign + zip a distributable app
 ```
 
 ---

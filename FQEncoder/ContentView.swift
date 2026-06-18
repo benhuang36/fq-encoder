@@ -90,11 +90,11 @@ struct ContentView: View {
                     Text(placeholder)
                         .font(.system(size: 14, design: editable ? .default : .monospaced))
                         .foregroundStyle(.secondary)
-                        // Match the TextEditor's text origin: outer padding (13/6)
+                        // Match the TextEditor's text origin: outer padding (13/12)
                         // plus NSTextView's default 5pt lineFragmentPadding on the left.
                         .padding(.leading, 13 + 5)
                         .padding(.trailing, 13)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 12)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: text)
@@ -103,7 +103,7 @@ struct ContentView: View {
                     .font(.system(size: 14, design: editable ? .default : .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 13)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 12)
             }
             .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
             .background(.regularMaterial)

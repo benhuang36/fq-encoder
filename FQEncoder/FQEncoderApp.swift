@@ -12,8 +12,8 @@ struct FQEncoderApp: App {
         }
         .windowResizability(.contentMinSize)
 
-        // Menu-bar resident icon (phase 2).
-        MenuBarExtra("FQEncoder", systemImage: "wand.and.stars") {
+        // Menu-bar resident icon (phase 2). TrayIcon is a template image.
+        MenuBarExtra("FQEncoder", image: "TrayIcon") {
             Toggle("自動監聽剪貼簿", isOn: $monitor.isEnabled)
 
             Divider()

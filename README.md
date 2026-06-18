@@ -1,5 +1,7 @@
 # FQEncoder
 
+**English** · [繁體中文](README.zh-Hant.md)
+
 A reversible text codec for macOS that encodes **any** string into just 7 letters — `F U C K Y O u` — and back.
 
 It ships as a menu-bar app: open the editor to encode/decode by hand, or let it watch your clipboard and transform copied text automatically.

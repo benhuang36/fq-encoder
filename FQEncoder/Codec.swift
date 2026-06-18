@@ -23,6 +23,7 @@ enum Codec {
     enum CodecError: LocalizedError {
         case invalidLength
         case invalidCharacter(Character)
+        case invalidByte
         case notUTF8
 
         var errorDescription: String? {
@@ -31,6 +32,8 @@ enum Codec {
                 return "輸入長度必須是 3 的倍數，這不是合法的編碼字串。"
             case .invalidCharacter(let c):
                 return "包含非法字元「\(c)」，編碼字串只能由 F U C K Y O u 組成。"
+            case .invalidByte:
+                return "包含無效的編碼組合，這不是由 FQEncoder 產生的字串。"
             case .notUTF8:
                 return "解碼後的位元組無法還原為文字。"
             }
@@ -62,7 +65,11 @@ enum Codec {
             guard let d1 = valueOf[chars[i]] else { throw CodecError.invalidCharacter(chars[i]) }
             guard let d2 = valueOf[chars[i + 1]] else { throw CodecError.invalidCharacter(chars[i + 1]) }
             guard let d3 = valueOf[chars[i + 2]] else { throw CodecError.invalidCharacter(chars[i + 2]) }
-            bytes.append(UInt8(d1 * 49 + d2 * 7 + d3))
+            // 7^3 = 343 > 256, so some valid-looking triples decode above 255.
+            // Reject them instead of overflowing UInt8 (which would crash).
+            let value = d1 * 49 + d2 * 7 + d3
+            guard value <= 255 else { throw CodecError.invalidByte }
+            bytes.append(UInt8(value))
             i += 3
         }
 

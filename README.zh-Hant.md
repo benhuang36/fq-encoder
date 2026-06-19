@@ -6,6 +6,8 @@
 
 它是常駐選單列的 App:可以打開編輯視窗手動編解碼,也可以讓它監看剪貼簿、自動轉換你複製的文字。
 
+> 💻 想要 **Windows / Linux** 版?請見跨平台的 Tauri 版本:[**fq-encoder-tauri**](https://github.com/benhuang36/fq-encoder-tauri)(編碼格式相同 —— 同一組密碼在兩邊都能互相解碼)。
+
 > 注意:`U`(大寫)和 `u`(小寫)是兩個**不同**的符號。完整的 7 符號字母表為 `F U C K Y O u`。
 
 ---

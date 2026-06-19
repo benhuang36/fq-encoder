@@ -6,6 +6,8 @@ A reversible text codec for macOS that encodes **any** string into just 7 letter
 
 It ships as a menu-bar app: open the editor to encode/decode by hand, or let it watch your clipboard and transform copied text automatically.
 
+> 💻 Want it on **Windows / Linux** too? See the cross-platform Tauri build: [**fq-encoder-tauri**](https://github.com/benhuang36/fq-encoder-tauri) (same wire format — the same password decodes across both).
+
 > Note: `U` (uppercase) and `u` (lowercase) are two **distinct** symbols. The 7-symbol alphabet is `F U C K Y O u`.
 
 ---
